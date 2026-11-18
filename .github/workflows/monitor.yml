@@ -1,0 +1,53 @@
+name: monitor
+
+# Twice a day: 07:00 and 19:00 IST. Also runs when the source list changes, or by hand.
+on:
+  schedule:
+    - cron: "30 1,13 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["sources.toml"]
+
+permissions:
+  contents: write
+
+concurrency: monitor
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m playwright install --with-deps chromium
+      - run: python -m pytest -q
+
+      - name: Monitor all sources
+        id: monitor
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set +e
+          if [ -n "$ANTHROPIC_API_KEY" ]; then python -m regwatch run --llm; else python -m regwatch run; fi
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Commit state and digest
+        run: |
+          git config user.name "regwatch-bot"
+          git config user.email "regwatch-bot@users.noreply.github.com"
+          git add state docs reports
+          git diff --cached --quiet || git commit -m "monitor run $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push
+
+      # A source failing twice in a row fails the job, and GitHub emails the repo owner.
+      - name: Alert on degraded sources
+        if: steps.monitor.outputs.code != '0'
+        run: |
+          echo "::error::One or more sources failed twice in a row. See reports/latest.md"
+          exit 1

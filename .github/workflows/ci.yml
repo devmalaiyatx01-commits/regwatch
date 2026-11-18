@@ -1,0 +1,25 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths-ignore: ["state/**", "docs/**", "reports/**"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q
+      - run: python -m regwatch eval
+      # New or edited sources must pass the onboarding checks before they are scheduled.
+      - if: github.event_name == 'pull_request'
+        run: |
+          python -m playwright install --with-deps chromium
+          python -m regwatch validate --all

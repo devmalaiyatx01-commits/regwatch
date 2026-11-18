@@ -1,0 +1,96 @@
+# Each [[source]] is one feed or listing page to watch.
+#
+# kind   = "feed"  RSS 2.0, RSS 1.0 (RDF) or Atom
+#          "html"  listing page parsed with CSS selectors (row, title, link, date, summary)
+# fetch  = "http"     plain HTTP via requests (default)
+#          "browser"  headless Chromium via Playwright, for pages that build their content
+#                     with JavaScript or refuse non-browser clients
+# lang   = language the source normally publishes in (used when detection is unsure)
+#
+# Add a source, then run:  python -m regwatch validate <id>
+
+[[source]]
+id = "mhra-alerts"
+authority = "MHRA (UK)"
+url = "https://www.gov.uk/drug-device-alerts.atom"
+kind = "feed"
+lang = "en"
+
+[[source]]
+id = "mhra-dsu"
+authority = "MHRA (UK)"
+url = "https://www.gov.uk/drug-safety-update.atom"
+kind = "feed"
+lang = "en"
+category_hint = "safety_alert"
+
+[[source]]
+id = "ema-news"
+authority = "EMA (EU)"
+url = "https://www.ema.europa.eu/en/news.xml"
+kind = "feed"
+lang = "en"
+
+[[source]]
+id = "hc-recalls"
+authority = "Health Canada"
+url = "https://recalls-rappels.canada.ca/en/feed/health-products-alerts-recalls"
+kind = "feed"
+lang = "en"
+category_hint = "safety_alert"
+
+[[source]]
+id = "ansm-news"
+authority = "ANSM (France)"
+url = "https://ansm.sante.fr/rss/actualites"
+kind = "feed"
+lang = "fr"
+
+[[source]]
+id = "aemps-news"
+authority = "AEMPS (Spain)"
+url = "https://www.aemps.gob.es/feed/"
+kind = "feed"
+lang = "es"
+
+[[source]]
+id = "pmda-ja"
+authority = "PMDA (Japan)"
+url = "https://www.pmda.go.jp/rss_003.xml"
+kind = "feed"
+lang = "ja"
+
+[[source]]
+id = "pmda-en"
+authority = "PMDA (Japan)"
+url = "https://www.pmda.go.jp/rss_008.xml"
+kind = "feed"
+lang = "en"
+
+[[source]]
+id = "cdsco-notices"
+authority = "CDSCO (India)"
+url = "https://cdsco.gov.in/opencms/opencms/en/Notifications/Public-Notices/"
+kind = "html"
+lang = "en"
+row = "table#example tbody tr"
+title = ["td:nth-of-type(2)"]
+date = "td:nth-of-type(3)"
+date_format = "%Y-%b-%d"
+link = "td:nth-of-type(4) a"
+
+[[source]]
+id = "fda-recalls"
+authority = "US FDA"
+url = "https://www.fda.gov/safety/recalls-market-withdrawals-safety-alerts"
+kind = "html"
+fetch = "browser"
+wait_for = "table tbody tr td a"
+category_hint = "recall"
+lang = "en"
+row = "table tbody tr"
+title = ["td:nth-of-type(2)", "td:nth-of-type(3)"]
+summary = "td:nth-of-type(5)"
+date = "td:nth-of-type(1)"
+date_format = "%m/%d/%Y"
+link = "td:nth-of-type(2) a"
