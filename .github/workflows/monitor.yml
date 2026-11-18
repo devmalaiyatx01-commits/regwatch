@@ -19,7 +19,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # Latest main, not the triggering commit: an earlier queued run may have pushed state since.
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -44,6 +47,7 @@ jobs:
           git config user.email "regwatch-bot@users.noreply.github.com"
           git add state docs reports
           git diff --cached --quiet || git commit -m "monitor run $(date -u +%Y-%m-%dT%H:%MZ)"
+          git pull --rebase origin main
           git push
 
       # A source failing twice in a row fails the job, and GitHub emails the repo owner.
