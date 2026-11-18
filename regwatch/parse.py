@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import html
+import json
 import re
+import textwrap
 import unicodedata
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, asdict
@@ -156,6 +158,36 @@ def parse_html(text: str, source, base_url: str) -> list[Item]:
     return dedupe(items)
 
 
+class _Fields(dict):
+    """Template fields: a missing key renders as empty text instead of raising."""
+
+    def __missing__(self, key):
+        return ""
+
+
+def parse_json(body: bytes, source) -> list[Item]:
+    """A JSON API: walk to the list (items_key, dotted), then fill the templates per record."""
+    rows = json.loads(body)
+    for key in source.items_key.split("."):
+        rows = rows.get(key, []) if isinstance(rows, dict) else []
+    items: list[Item] = []
+    for row in rows if isinstance(rows, list) else []:
+        fields = _Fields({k: clean_text(str(v)) for k, v in row.items() if isinstance(v, (str, int, float))})
+        # API fields can be paragraphs; titles are for scanning, the full text stays in the summary.
+        title = textwrap.shorten(clean_text(source.title_template.format_map(fields)), 140, placeholder="...")
+        url = source.url_template.format_map(fields)
+        if not title or not url:
+            continue
+        items.append(Item(
+            source_id=source.id,
+            url=normalise_url(url),
+            title=title,
+            published=parse_date(fields[source.date_field], source.date_format) if source.date_field else None,
+            summary=clean_text(source.summary_template.format_map(fields)) if source.summary_template else "",
+        ))
+    return dedupe(items)
+
+
 def dedupe(items: list[Item]) -> list[Item]:
     seen: set[str] = set()
     out = []
@@ -169,4 +201,6 @@ def dedupe(items: list[Item]) -> list[Item]:
 def parse(source, result) -> list[Item]:
     if source.kind == "feed":
         return parse_feed(result.body, source.id, result.url)
+    if source.kind == "json":
+        return parse_json(result.body, source)
     return parse_html(result.text(), source, result.url)

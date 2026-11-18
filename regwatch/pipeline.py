@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -60,8 +61,15 @@ def run(sources, state: State, classifier=None, now: str | None = None) -> RunRe
     report = RunReport(started=now)
     session = requests.Session()
 
+    in_cloud = bool(os.environ.get("REGWATCH_CLOUD"))
     for source in sources:
         sr = SourceRun(source.id, source.authority, via=source.fetch)
+        if in_cloud and not source.cloud:
+            # Some sites refuse datacenter IPs (bot protection, geo-blocking). They run from a
+            # local machine instead; skipping here is not a failure and does not touch health.
+            sr.status, sr.error = "skipped", "refuses cloud IPs; runs from a local machine"
+            report.sources.append(sr)
+            continue
         health = state.health.setdefault(source.id, {"consecutive_failures": 0, "last_ok": None})
         try:
             if not allowed_by_robots(source.url, session):

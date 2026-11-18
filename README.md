@@ -8,21 +8,36 @@ Live digest: https://devmalaiyatx01-commits.github.io/regwatch/
 
 ## What it covers
 
-10 sources from 8 authorities, 4 languages, 4 page formats:
+11 sources from 8 authorities, 4 languages, 5 formats:
 
-| Source | Authority | Format | Fetch | Language |
-|---|---|---|---|---|
-| mhra-alerts, mhra-dsu | MHRA (UK) | Atom | HTTP | en |
-| ema-news | EMA (EU) | RSS 2.0 | HTTP | en |
-| hc-recalls | Health Canada | RSS 2.0 | HTTP | en |
-| ansm-news | ANSM (France) | RSS 2.0 | HTTP | fr |
-| aemps-news | AEMPS (Spain) | RSS 2.0 | HTTP | es |
-| pmda-ja, pmda-en | PMDA (Japan) | RSS 1.0 (RDF) | HTTP | ja, en |
-| cdsco-notices | CDSCO (India) | HTML table, custom date format | HTTP | en |
-| fda-recalls | US FDA | HTML table built by JavaScript | headless Chromium | en |
+| Source | Authority | Format | Fetch | Language | Scheduled cloud run |
+|---|---|---|---|---|---|
+| mhra-alerts, mhra-dsu | MHRA (UK) | Atom | HTTP | en | yes |
+| ema-news | EMA (EU) | RSS 2.0 | HTTP | en | yes |
+| hc-recalls | Health Canada | RSS 2.0 | HTTP | en | yes |
+| ansm-news | ANSM (France) | RSS 2.0 | HTTP | fr | yes |
+| aemps-news | AEMPS (Spain) | RSS 2.0 | HTTP | es | yes |
+| pmda-ja, pmda-en | PMDA (Japan) | RSS 1.0 (RDF) | HTTP | ja, en | yes |
+| openfda-drug-recalls | US FDA | JSON API (openFDA) | HTTP | en | yes |
+| cdsco-notices | CDSCO (India) | HTML table, custom date format | HTTP | en | local runs |
+| fda-recalls | US FDA | HTML table built by JavaScript | headless Chromium | en | local runs |
 
-The FDA page returns 404 to non-browser clients and fills its table from JavaScript, so it is
-fetched with Playwright. Everything else uses plain HTTP, which is faster and cheaper.
+The FDA recalls page returns 404 to non-browser clients and fills its table from JavaScript, so it
+is fetched with Playwright. Everything else uses plain HTTP, which is faster and cheaper.
+
+## What the first cloud run found
+
+Run locally (from India), all sources passed. The first scheduled run on GitHub's servers
+(US datacenter IPs) passed 7 of 10 and showed three ways real sites refuse automated traffic:
+
+| Source | What happened from the cloud | Response |
+|---|---|---|
+| FDA recalls page | bot protection never served the table to a cloud browser (timeout) | added the FDA's official **openFDA API** as a source for the cloud run; the page runs locally |
+| CDSCO | connection refused from outside India | runs locally (`cloud = false`) |
+| Health Canada | HTTP 429, too many requests | the fetcher now honours `Retry-After` and backs off 2, 4, 8 s |
+
+RegWatch does not try to get around bot protection. Sources marked `cloud = false` are skipped by
+the scheduled run and reported as "skipped", not as failures, and run from a machine the site accepts.
 
 ## How a run works
 
@@ -33,7 +48,7 @@ sources.toml
 robots.txt check -> fetch (requests, or Playwright when fetch = "browser")
    |
    v
-parse: RSS 2.0 / RSS 1.0 / Atom / CSS selectors -> Item(url, title, date, summary)
+parse: RSS 2.0 / RSS 1.0 / Atom / CSS selectors / JSON templates -> Item(url, title, date, summary)
    |   strips markup, decodes entities, normalises Unicode, drops tracking parameters
    v
 language detection (Unicode script + stopwords) -> en / fr / es / ja ...
@@ -59,7 +74,7 @@ python -m regwatch run                  # one monitoring run, writes docs/ and r
 python -m regwatch run --llm            # same, Claude classifies new and revised items
 python -m regwatch validate --all       # onboarding checks for every source
 python -m regwatch eval                 # score the classifier on the labelled set
-python -m pytest -q                     # 24 offline tests
+python -m pytest -q                     # 27 offline tests
 ```
 
 `--llm` needs `ANTHROPIC_API_KEY`. Without it the rule classifier is used and nothing else changes.
@@ -103,7 +118,8 @@ with a key to score it on the same split.
 
 ## Scheduling and monitoring
 
-`.github/workflows/monitor.yml` runs at 07:00 and 19:00 IST. Each run commits the updated state,
+`.github/workflows/monitor.yml` runs at 07:00 and 19:00 IST with `REGWATCH_CLOUD=1` (which skips
+the `cloud = false` sources). Each run commits the updated state,
 digest and report. Per source it records status, item count, new and revised counts, latency and
 the error if any. A source that errors or suddenly parses 0 items (a sign the page layout changed)
 twice in a row fails the workflow, which emails the repository owner.

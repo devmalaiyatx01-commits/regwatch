@@ -32,8 +32,9 @@ def cmd_run(args) -> int:
     report = run(sources, state, pick_classifier(args.llm))
     state.save()
     write_reports(report, state, sources, args.out, args.markdown)
-    print(f"{len(report.changes)} changes; {sum(s.status == 'ok' for s in report.sources)}/"
-          f"{len(report.sources)} sources ok")
+    ran = [s for s in report.sources if s.status != "skipped"]
+    print(f"{len(report.changes)} changes; {sum(s.status == 'ok' for s in ran)}/{len(ran)} sources ok"
+          f" ({len(report.sources) - len(ran)} skipped)")
     for s in report.sources:
         flag = "DEGRADED" if s.degraded else s.status
         print(f"  {s.source_id:15} {flag:8} items={s.items:<4} new={s.new:<3} revised={s.revised:<3} "
@@ -55,6 +56,9 @@ def cmd_validate(args) -> int:
     failed = 0
     for source in chosen:
         print(f"\n{source.id} ({source.url})")
+        if os.environ.get("REGWATCH_CLOUD") and not source.cloud:
+            print("  [SKIP] refuses cloud IPs; validate from a local machine")
+            continue
         for name, ok, detail in validate_source(source):
             print(f"  [{'PASS' if ok else 'FAIL'}] {name}" + (f"  ({detail})" if detail else ""))
             failed += not ok

@@ -20,6 +20,8 @@ jobs:
       - run: python -m regwatch eval
       # New or edited sources must pass the onboarding checks before they are scheduled.
       - if: github.event_name == 'pull_request'
+        env:
+          REGWATCH_CLOUD: "1"
         run: |
           python -m playwright install --with-deps chromium
           python -m regwatch validate --all

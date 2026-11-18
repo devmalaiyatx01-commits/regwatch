@@ -8,7 +8,8 @@ from regwatch.classify import LLMClassifier, RuleClassifier
 from regwatch.config import Source, check_source
 from regwatch.detect import State, detect_changes, fingerprint
 from regwatch.lang import detect_language
-from regwatch.parse import Item, normalise_url, parse_date, parse_feed, parse_html
+from regwatch.fetch import retry_delay
+from regwatch.parse import Item, normalise_url, parse_date, parse_feed, parse_html, parse_json
 
 ATOM = b"""<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -54,6 +55,40 @@ def test_parse_html_table_with_custom_date_format():
     items = parse_html(HTML_TABLE, src, "https://cdsco.gov.in/x/")
     assert [i.published for i in items] == ["2026-11-11", "2026-10-09"]
     assert items[0].url == "https://cdsco.gov.in/download.jsp?num_id=MTQ4"
+
+
+def test_parse_json_api_with_templates():
+    body = json.dumps({"meta": {}, "results": [
+        {"recall_number": "D-0145-2027", "classification": "Class I", "recalling_firm": "Acme Pharma",
+         "product_description": "Tablets 10 mg", "reason_for_recall": "Contamination", "report_date": "20261111"},
+        {"classification": "Class II"},   # no recall_number: still parsed, but needs a URL
+    ]}).encode()
+    src = Source(id="openfda", authority="US FDA", url="https://api.fda.gov/x", kind="json",
+                 items_key="results", title_template="{classification} drug recall: {product_description}",
+                 summary_template="Firm: {recalling_firm}. Reason: {reason_for_recall}.",
+                 url_template='https://api.fda.gov/drug/enforcement.json?search=recall_number:"{recall_number}"',
+                 date_field="report_date", date_format="%Y%m%d")
+    items = parse_json(body, src)
+    assert items[0].title == "Class I drug recall: Tablets 10 mg"
+    assert items[0].published == "2026-11-11" and "D-0145-2027" in items[0].url
+    assert RuleClassifier().classify(items[0].title, items[0].summary, hint="recall").severity == "high"
+
+
+def test_retry_after_is_honoured_and_capped():
+    resp = SimpleNamespace(headers={"retry-after": "7"})
+    assert retry_delay(resp, 0) == 7
+    assert retry_delay(SimpleNamespace(headers={"retry-after": "3600"}), 0) == 60
+    assert retry_delay(None, 2) == 8
+
+
+def test_cloud_run_skips_sources_that_refuse_cloud_ips(monkeypatch, tmp_path):
+    from regwatch.pipeline import run
+    monkeypatch.setenv("REGWATCH_CLOUD", "1")
+    src = Source(id="cdsco", authority="CDSCO", url="https://cdsco.gov.in/x", cloud=False)
+    state = State(tmp_path / "s.json")
+    report = run([src], state)
+    assert report.sources[0].status == "skipped" and not report.degraded
+    assert "cdsco" not in state.health          # skipping never counts as a failure
 
 
 def test_parse_date_variants():

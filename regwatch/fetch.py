@@ -60,11 +60,23 @@ def allowed_by_robots(url: str, session: requests.Session | None = None) -> bool
     return parser is None or parser.can_fetch(USER_AGENT, url)
 
 
-def fetch_http(url: str, retries: int = 2, session: requests.Session | None = None) -> FetchResult:
+MAX_WAIT_S = 60
+
+
+def retry_delay(resp: requests.Response | None, attempt: int) -> float:
+    """Honour the server's Retry-After (seconds) when it sends one, else back off 2, 4, 8 s."""
+    header = resp.headers.get("retry-after", "") if resp is not None else ""
+    if header.strip().isdigit():
+        return min(float(header), MAX_WAIT_S)
+    return min(2.0 ** (attempt + 1), MAX_WAIT_S)
+
+
+def fetch_http(url: str, retries: int = 3, session: requests.Session | None = None) -> FetchResult:
     session = session or requests.Session()
     last_error = ""
     for attempt in range(retries + 1):
         start = time.monotonic()
+        resp = None
         try:
             resp = session.get(url, timeout=TIMEOUT, headers={"User-Agent": USER_AGENT})
         except requests.RequestException as exc:
@@ -74,9 +86,9 @@ def fetch_http(url: str, retries: int = 2, session: requests.Session | None = No
             if resp.status_code not in RETRY_STATUS:
                 return FetchResult(resp.url, resp.status_code, resp.content,
                                    resp.headers.get("content-type", ""), elapsed, "http")
-            last_error = f"HTTP {resp.status_code}"
+            last_error = f"HTTP {resp.status_code} after {attempt + 1} attempts"
         if attempt < retries:
-            time.sleep(2 ** attempt)
+            time.sleep(retry_delay(resp, attempt))
     raise FetchError(last_error)
 
 

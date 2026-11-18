@@ -5,7 +5,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-KINDS = {"feed", "html"}
+KINDS = {"feed", "html", "json"}
 FETCHERS = {"http", "browser"}
 
 
@@ -25,8 +25,16 @@ class Source:
     date_format: str = ""
     summary: str = ""
     wait_for: str = ""
+    # json sources only: where the list is, and templates filled from each record's fields
+    items_key: str = ""
+    title_template: str = ""
+    summary_template: str = ""
+    url_template: str = ""
+    date_field: str = ""
     # category to use when no keyword matches (e.g. a page that only lists recalls)
     category_hint: str = ""
+    # False for sites that refuse cloud datacenter IPs; skipped when REGWATCH_CLOUD is set
+    cloud: bool = True
     # regexes removed before fingerprinting (e.g. "Page last updated ...")
     ignore: tuple[str, ...] = field(default_factory=tuple)
 
@@ -62,4 +70,6 @@ def check_source(src: Source) -> list[str]:
         problems.append("url must be absolute")
     if src.kind == "html" and not (src.row and src.title and src.link):
         problems.append("html sources need row, title and link selectors")
+    if src.kind == "json" and not (src.items_key and src.title_template and src.url_template):
+        problems.append("json sources need items_key, title_template and url_template")
     return problems
